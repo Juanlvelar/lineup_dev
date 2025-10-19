@@ -1,4 +1,3 @@
-
 import streamlit as st
 import random
 from collections import defaultdict
@@ -12,7 +11,7 @@ from datetime import datetime
 # --- CONFIG INICIAL ---
 st.set_page_config(page_title="Smart Lineup Rotator", page_icon="⚽", layout="wide")
 st.title("⚽ Smart Football Lineup Generator - Fair Playtime Edition")
-st.markdown("Generate balanced rotations ensuring that each player plays outside the goal at the same time, with professional PDF.")
+st.markdown("Genera rotaciones equilibradas, permite editar posiciones y descargar PDF profesional.")
 
 # --- SIDEBAR ---
 st.sidebar.header("⚙️ Match Settings")
@@ -121,6 +120,7 @@ if st.button("🎲 Generate Rotations"):
                 break
 
         lineups = best_lineups
+        edited_lineups = lineups.copy()
 
         # --- VISUALIZACIÓN ---
         for i, lineup in enumerate(lineups, 1):
@@ -148,6 +148,23 @@ if st.button("🎲 Generate Rotations"):
                         bbox=dict(facecolor='gray', alpha=0.7, boxstyle='round'))
 
             st.pyplot(fig)
+
+        # --- EDICIÓN DE INTERVALOS ---
+        st.markdown("## ✏️ Edit Rotations (optional)")
+        for i, lineup in enumerate(lineups, 1):
+            with st.expander(f"Edit Interval {i}"):
+                st.write("Adjust player positions below:")
+                edited = {}
+                for pos in field_positions:
+                    edited[pos] = st.selectbox(
+                        f"{pos}",
+                        options=list(players.keys()),
+                        index=list(players.keys()).index(lineup[pos]) if lineup[pos] in players else 0,
+                        key=f"edit_{i}_{pos}"
+                    )
+                if st.button(f"💾 Save changes for Interval {i}", key=f"save_{i}"):
+                    edited_lineups[i - 1] = edited
+                    st.success(f"✅ Interval {i} updated successfully.")
 
         # --- RESUMEN ---
         st.markdown(f"### ⏱️ Summary of minutes played (Goalkeeper not counted: {'Yes' if ignore_gk else 'No'})")
@@ -186,7 +203,7 @@ if st.button("🎲 Generate Rotations"):
                 c.drawCentredString(sub_x, sub_y, sub)
 
         intervals_per_page = 4
-        for page_start in range(0, len(lineups), intervals_per_page):
+        for page_start in range(0, len(edited_lineups), intervals_per_page):
             c.setFont("Helvetica-Bold", 14)
             c.drawString(20, 560, f"Smart Lineup Rotations - {datetime.now().strftime('%Y-%m-%d')}")
             c.setFont("Helvetica", 10)
@@ -194,13 +211,13 @@ if st.button("🎲 Generate Rotations"):
             c.drawString(20, 530, f"Goalkeeper time excluded: {'Yes' if ignore_gk else 'No'}")
 
             y_positions = [350, 100]
-            for idx, i in enumerate(range(page_start, min(page_start + intervals_per_page, len(lineups)), 2)):
+            for idx, i in enumerate(range(page_start, min(page_start + intervals_per_page, len(edited_lineups)), 2)):
                 y_offset = y_positions[idx % 2]
-                lineup1 = lineups[i]
+                lineup1 = edited_lineups[i]
                 resting1 = [p for p in all_players if p not in lineup1.values()]
                 draw_field_pdf(c, 50, y_offset, lineup1, resting1)
-                if i + 1 < len(lineups):
-                    lineup2 = lineups[i + 1]
+                if i + 1 < len(edited_lineups):
+                    lineup2 = edited_lineups[i + 1]
                     resting2 = [p for p in all_players if p not in lineup2.values()]
                     draw_field_pdf(c, 400, y_offset, lineup2, resting2)
             c.showPage()
