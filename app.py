@@ -286,4 +286,84 @@ else:
     st.session_state["edited_lineups"] = [ln.copy() for ln in lineups]
 
     # --- SUMMARY ---
-    st.markdown(f"### ⏱️ Summary of minutes played (Goalkeeper not counted: {'Yes' if ignore_gk else 'No'})"_
+    st.markdown(f"### ⏱️ Summary of minutes played (Goalkeeper not counted: {'Yes' if ignore_gk else 'No'})")
+    # prepare summary data
+    summary_data = sorted(minutes_played.items(), key=lambda x: x[1], reverse=True)
+    # show table with minutes and percentage of total intervals (note: GK excluded if selected)
+    st.table([(p, m, f"{(m / intervals * 100):.1f}%") for p, m in summary_data])
+
+    # --- PDF GENERATION (uses edited_lineups) ---
+    pdf_buffer = BytesIO()
+    c = canvas.Canvas(pdf_buffer, pagesize=landscape(letter))
+
+    def draw_field_pdf(c, x_offset, y_offset, lineup, resting_players):
+        c.setFillColorRGB(0.7, 1, 0.7)
+        c.rect(x_offset, y_offset, 300, 180, fill=1)
+        c.setStrokeColorRGB(1, 1, 1)
+        c.setLineWidth(2)
+        c.line(x_offset + 150, y_offset, x_offset + 150, y_offset + 180)
+        c.line(x_offset, y_offset + 90, x_offset + 300, y_offset + 90)
+        c.circle(x_offset + 150, y_offset + 90, 30)
+        c.rect(x_offset, y_offset + 60, 45, 60, stroke=1, fill=0)
+        c.rect(x_offset + 255, y_offset + 60, 45, 60, stroke=1, fill=0)
+
+        for pos, player_name in lineup.items():
+            x = x_offset + (formation_x[pos] / 10) * 300
+            y = y_offset + (formation_y[pos] / 6) * 180
+            # mark GK with a small "G" box color for clarity
+            if pos == "Goalkeeper":
+                c.setFillColorRGB(0.9, 0.9, 0.6)
+                c.rect(x - 17, y - 12, 34, 24, fill=1)
+            else:
+                c.setFillColorRGB(1, 1, 1)
+                c.rect(x - 15, y - 10, 30, 20, fill=1)
+            c.setFillColorRGB(0, 0, 0)
+            c.drawCentredString(x, y, player_name)
+
+        for idx, sub in enumerate(resting_players):
+            sub_x = x_offset + 40 + idx * 50
+            sub_y = y_offset - 25
+            c.setFillColorRGB(0.6, 0.6, 0.6)
+            c.rect(sub_x - 15, sub_y - 10, 30, 20, fill=1)
+            c.setFillColorRGB(0, 0, 0)
+            c.drawCentredString(sub_x, sub_y, sub)
+
+    intervals_per_page = 4
+    edited_lineups = st.session_state["edited_lineups"]
+    for page_start in range(0, len(edited_lineups), intervals_per_page):
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(20, 560, f"Smart Lineup Rotations - {datetime.now().strftime('%Y-%m-%d')}")
+        c.setFont("Helvetica", 10)
+        c.drawString(20, 545, f"Players: {', '.join(all_players)}")
+        c.drawString(20, 530, f"Goalkeeper time excluded: {'Yes' if ignore_gk else 'No'}")
+        y_positions = [350, 100]
+        for idx, i in enumerate(range(page_start, min(page_start + intervals_per_page, len(edited_lineups)), 2)):
+            y_offset = y_positions[idx % 2]
+            lineup1 = edited_lineups[i]
+            resting1 = [p for p in all_players if p not in lineup1.values()]
+            draw_field_pdf(c, 50, y_offset, lineup1, resting1)
+            if i + 1 < len(edited_lineups):
+                lineup2 = edited_lineups[i + 1]
+                resting2 = [p for p in all_players if p not in lineup2.values()]
+                draw_field_pdf(c, 400, y_offset, lineup2, resting2)
+        c.showPage()
+
+    # Final summary page
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(250, 550, "Summary of Minutes Played")
+    c.setFont("Helvetica", 12)
+    y = 500
+    for player, mins in summary_data:
+        c.drawString(280, y, f"{player}: {mins} intervals")
+        y -= 20
+    c.showPage()
+    c.save()
+
+    pdf_buffer.seek(0)
+    st.markdown("### 📄 Download Professional PDF")
+    st.download_button(
+        label="Download PDF",
+        data=pdf_buffer,
+        file_name="lineup_rotations.pdf",
+        mime="application/pdf"
+    )
